@@ -201,5 +201,34 @@ body.theme-white  { --c1: #ffffff; --c2: #aaddff; --bg: #000810; }
 body.theme-green  { --c1: #00ff66; --c2: #44ffaa; --bg: #000a04; }
 body.theme-fire   { --c1: #ff4400; --c2: #ffaa00; --bg: #100300; }
 
-/* ── Fist mode overlay ── */
-body.fist-mode #webcam { opacity: 0.1; }
+/* ── Truth toggle ── */
+.truth-row {
+  border-top: 1px solid rgba(180,0,255,0.25);
+  padding-top: 12px;
+  gap: 8px !important;
+}
+.truth-label {
+  font-size: 11px !important;
+  letter-spacing: 3px !important;
+  color: var(--c1) !important;
+  text-shadow: 0 0 10px var(--c1);
+}
+.truth-hint {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.25);
+  font-family: 'Courier New', monospace;
+}
+.truth-slider { border-color: var(--c1) !important; }
+input:checked + .truth-slider {
+  background: rgba(180,0,255,0.4) !important;
+  box-shadow: 0 0 12px var(--c1);
+}
+input:checked + .truth-slider::before {
+  background: var(--c1) !important;
+  box-shadow: 0 0 16px var(--c1), 0 0 32px var(--c1) !important;
+}
+
+/* ── Fist / strobe mode ── */
+body.fist-mode #webcam { opacity: 0.05; }
+body.strobe-mode #webcam { opacity: 0.0; }

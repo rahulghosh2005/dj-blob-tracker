@@ -1,4 +1,4 @@
-// ─── DJ Blob Tracker — Hand Gesture Edition ─────────────────────────────────
+// ─── DJ Blob Tracker — Truth Edition ────────────────────────────────────────
 
 const video     = document.getElementById('webcam');
 const canvas    = document.getElementById('canvas');
@@ -9,7 +9,7 @@ const fpsCtr    = document.getElementById('fps-counter');
 const blobCtr   = document.getElementById('blob-count');
 const gestureEl = document.getElementById('gesture-display');
 
-// ─── Processing canvas (downscaled for performance) ──────────────────────────
+// ─── Processing canvas ───────────────────────────────────────────────────────
 const PROC_W = 320, PROC_H = 240;
 const proc = document.createElement('canvas');
 proc.width = PROC_W; proc.height = PROC_H;
@@ -19,11 +19,12 @@ const pctx = proc.getContext('2d', { willReadFrequently: true });
 const cfg = {
   motionThresh: 22,
   bgAlpha:      0.04,
-  minBlobCells: 4,
+  minBlobCells: 12,   // higher = fewer small face-noise blobs
   cellSize:     10,
   confidence:   0.35,
   colorMode:    'purple',
   showVideo:    true,
+  truthMode:    false,
 };
 
 const COLORS = {
@@ -34,9 +35,14 @@ const COLORS = {
 };
 const C = () => COLORS[cfg.colorMode];
 
+// ─── BTR Strobe palette ───────────────────────────────────────────────────────
+const STROBE = [
+  '#ff00ee', '#00ffff', '#eeff00', '#ff1100',
+  '#00ff44', '#ffffff', '#aa00ff', '#ff6600',
+];
+
 // ─── Background model ─────────────────────────────────────────────────────────
 let bgModel = null;
-
 function updateBg(data) {
   if (!bgModel) { bgModel = new Float32Array(data.length); bgModel.set(data); return; }
   const a = cfg.bgAlpha;
@@ -46,7 +52,6 @@ function updateBg(data) {
     bgModel[i+2] += a * (data[i+2] - bgModel[i+2]);
   }
 }
-
 function getFgMask(data) {
   const mask = new Uint8Array(PROC_W * PROC_H);
   const t = cfg.motionThresh;
@@ -57,12 +62,11 @@ function getFgMask(data) {
   return mask;
 }
 
-// ─── Blob detection (grid connected components) ───────────────────────────────
+// ─── Blob detection ───────────────────────────────────────────────────────────
 function findBlobs(mask) {
   const cs = cfg.cellSize;
   const cw = Math.ceil(PROC_W / cs), ch = Math.ceil(PROC_H / cs);
   const grid = new Uint8Array(cw * ch);
-
   for (let gy = 0; gy < ch; gy++) {
     for (let gx = 0; gx < cw; gx++) {
       let on = 0, tot = 0;
@@ -73,11 +77,9 @@ function findBlobs(mask) {
       grid[gy*cw+gx] = tot && on/tot > 0.35 ? 1 : 0;
     }
   }
-
   const labels = new Int32Array(cw*ch).fill(-1);
   const blobs  = [];
   let nextId   = 0;
-
   for (let gy = 0; gy < ch; gy++) {
     for (let gx = 0; gx < cw; gx++) {
       const idx = gy*cw+gx;
@@ -131,7 +133,7 @@ class BlobTracker {
   }
 }
 
-// ─── Hand Skeleton Connections ────────────────────────────────────────────────
+// ─── Hand connections ─────────────────────────────────────────────────────────
 const HAND_CONNECTIONS = [
   ['wrist','thumb_cmc'],['thumb_cmc','thumb_mcp'],['thumb_mcp','thumb_ip'],['thumb_ip','thumb_tip'],
   ['wrist','index_finger_mcp'],['index_finger_mcp','index_finger_pip'],['index_finger_pip','index_finger_dip'],['index_finger_dip','index_finger_tip'],
@@ -140,122 +142,90 @@ const HAND_CONNECTIONS = [
   ['wrist','pinky_finger_mcp'],['pinky_finger_mcp','pinky_finger_pip'],['pinky_finger_pip','pinky_finger_dip'],['pinky_finger_dip','pinky_finger_tip'],
   ['index_finger_mcp','middle_finger_mcp'],['middle_finger_mcp','ring_finger_mcp'],['ring_finger_mcp','pinky_finger_mcp'],
 ];
-
-// ─── Gesture Detection ────────────────────────────────────────────────────────
 const FINGERS = ['index_finger','middle_finger','ring_finger','pinky_finger'];
 
-function detectGesture(keypoints) {
+// ─── Hand analysis: count extended fingers ────────────────────────────────────
+function analyzeHand(keypoints) {
   const kp = {};
   for (const k of keypoints) kp[k.name] = k;
-  if (!kp.wrist) return 'open';
-
-  let curled = 0;
+  if (!kp.wrist) return { count: -1, isFist: false };
+  let extended = 0;
   for (const f of FINGERS) {
     const tip = kp[`${f}_tip`], mcp = kp[`${f}_mcp`];
     if (!tip || !mcp) continue;
-    const tipD = Math.hypot(tip.x-kp.wrist.x, tip.y-kp.wrist.y);
-    const mcpD = Math.hypot(mcp.x-kp.wrist.x, mcp.y-kp.wrist.y);
-    if (tipD < mcpD * 1.25) curled++;
+    const tipD = Math.hypot(tip.x - kp.wrist.x, tip.y - kp.wrist.y);
+    const mcpD = Math.hypot(mcp.x - kp.wrist.x, mcp.y - kp.wrist.y);
+    if (tipD > mcpD * 1.25) extended++;
   }
-
-  if (curled >= 3) return 'fist';
-
-  // Peace sign: index + middle extended, others curled
-  const idx = kp['index_finger_tip'], mid = kp['middle_finger_tip'];
-  const rng = kp['ring_finger_tip'],  pnk = kp['pinky_finger_tip'];
-  const idxMcp = kp['index_finger_mcp'], midMcp = kp['middle_finger_mcp'];
-  const rngMcp = kp['ring_finger_mcp'],  pnkMcp = kp['pinky_finger_mcp'];
-  if (idx && mid && rng && pnk && idxMcp && midMcp && rngMcp && pnkMcp) {
-    const idxUp = Math.hypot(idx.x-kp.wrist.x, idx.y-kp.wrist.y) > Math.hypot(idxMcp.x-kp.wrist.x, idxMcp.y-kp.wrist.y);
-    const midUp = Math.hypot(mid.x-kp.wrist.x, mid.y-kp.wrist.y) > Math.hypot(midMcp.x-kp.wrist.x, midMcp.y-kp.wrist.y);
-    const rngCurl = Math.hypot(rng.x-kp.wrist.x, rng.y-kp.wrist.y) < Math.hypot(rngMcp.x-kp.wrist.x, rngMcp.y-kp.wrist.y)*1.2;
-    const pnkCurl = Math.hypot(pnk.x-kp.wrist.x, pnk.y-kp.wrist.y) < Math.hypot(pnkMcp.x-kp.wrist.x, pnkMcp.y-kp.wrist.y)*1.2;
-    if (idxUp && midUp && rngCurl && pnkCurl) return 'peace';
-  }
-
-  return 'open';
+  return { count: extended, isFist: extended === 0 };
 }
 
 // ─── Draw hand skeleton ───────────────────────────────────────────────────────
-function drawHand(keypoints, gesture) {
+function drawHand(keypoints, handState) {
   if (!keypoints?.length) return;
   const kp = {};
   for (const k of keypoints) kp[k.name] = k;
-
-  const sx = canvas.width / video.videoWidth;
+  const sx = canvas.width  / video.videoWidth;
   const sy = canvas.height / video.videoHeight;
-
-  const col   = C().main;
-  const glow  = C().glow;
-  const alpha = gesture === 'fist' ? 1.0 : 0.9;
+  const col  = C().main;
+  const glow = C().glow;
+  const bold = handState.isFist;
 
   ctx.save();
-
-  // Draw connections
-  ctx.lineWidth = gesture === 'fist' ? 3 : 1.8;
+  // Skeleton lines
+  ctx.lineWidth = bold ? 3 : 1.8;
   for (const [a, b] of HAND_CONNECTIONS) {
     if (!kp[a] || !kp[b]) continue;
     ctx.beginPath();
-    ctx.moveTo(kp[a].x * sx, kp[a].y * sy);
-    ctx.lineTo(kp[b].x * sx, kp[b].y * sy);
-    ctx.strokeStyle = glow + alpha * 0.8 + ')';
+    ctx.moveTo(kp[a].x*sx, kp[a].y*sy);
+    ctx.lineTo(kp[b].x*sx, kp[b].y*sy);
+    ctx.strokeStyle = glow + (bold ? '0.9' : '0.7') + ')';
     ctx.shadowColor = col;
-    ctx.shadowBlur  = gesture === 'fist' ? 20 : 8;
+    ctx.shadowBlur  = bold ? 20 : 8;
     ctx.stroke();
   }
-
-  // Draw landmark dots
+  // Landmark dots
   for (const k of keypoints) {
-    const x = k.x * sx, y = k.y * sy;
+    const x = k.x*sx, y = k.y*sy;
     const isTip = k.name.endsWith('_tip');
-    const r = isTip ? 5 : 3;
-
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI*2);
-    ctx.fillStyle = isTip ? col : glow + '0.5)';
+    ctx.arc(x, y, isTip ? 5 : 3, 0, Math.PI*2);
+    ctx.fillStyle  = isTip ? col : glow + '0.5)';
     ctx.shadowColor = col;
     ctx.shadowBlur  = isTip ? 16 : 6;
     ctx.fill();
-
-    // Tip labels
-    if (isTip && cfg.colorMode !== 'fire') {
-      ctx.font = '8px "Courier New"';
-      ctx.fillStyle = glow + '0.7)';
-      ctx.shadowBlur = 0;
-      ctx.fillText(k.name.replace('_tip','').replace('_finger','').toUpperCase(), x+6, y-4);
-    }
   }
-
-  // Bounding box around hand
-  const xs = keypoints.map(k => k.x * sx);
-  const ys = keypoints.map(k => k.y * sy);
-  const hx = Math.min(...xs) - 12, hy = Math.min(...ys) - 12;
-  const hw = Math.max(...xs) - hx + 24, hh = Math.max(...ys) - hy + 24;
-
+  // Bounding box
+  const xs = keypoints.map(k => k.x*sx), ys = keypoints.map(k => k.y*sy);
+  const hx = Math.min(...xs)-12, hy = Math.min(...ys)-12;
+  const hw = Math.max(...xs)-hx+24, hh = Math.max(...ys)-hy+24;
   ctx.strokeStyle = col;
   ctx.lineWidth   = 1.5;
   ctx.shadowColor = col;
-  ctx.shadowBlur  = gesture === 'fist' ? 30 : 14;
+  ctx.shadowBlur  = bold ? 30 : 14;
   ctx.strokeRect(hx, hy, hw, hh);
-
-  // Gesture label
-  const GLYPH = { fist: '✊ FIST', peace: '✌ PEACE', open: '✋ HAND' };
-  ctx.font = '12px "Courier New"';
+  // Plain text label — no emojis
+  ctx.font = '11px "Courier New"';
   ctx.fillStyle = col;
-  ctx.shadowBlur = 12;
-  ctx.fillText(GLYPH[gesture] || '✋ HAND', hx, hy - 6);
-
+  ctx.shadowBlur = 10;
+  const label = handState.isFist ? 'FIST' : `HAND  ${handState.count}F`;
+  ctx.fillText(label, hx+4, hy-6);
   ctx.restore();
 }
 
-// ─── Render blobs ─────────────────────────────────────────────────────────────
+// ─── Scale helpers ────────────────────────────────────────────────────────────
 function scaleX(x) { return (x / PROC_W) * canvas.width;  }
 function scaleY(y) { return (y / PROC_H) * canvas.height; }
 function scaleW(w) { return (w / PROC_W) * canvas.width;  }
 function scaleH(h) { return (h / PROC_H) * canvas.height; }
 
+// ─── Draw motion blobs ────────────────────────────────────────────────────────
+// Min screen area to render (filters face-pixel noise)
+const MIN_SCREEN_AREA_FRAC = 0.008; // 0.8% of screen
+
 function drawBlobs(blobs, opacity) {
-  if (opacity <= 0) return;
+  if (opacity <= 0.01) return;
+  const minArea = canvas.width * canvas.height * MIN_SCREEN_AREA_FRAC;
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.font = '9px "Courier New"';
@@ -265,13 +235,14 @@ function drawBlobs(blobs, opacity) {
   for (const b of blobs.values()) {
     if (b.miss > 0) continue;
     const x=scaleX(b.x), y=scaleY(b.y), w=scaleW(b.w), h=scaleH(b.h);
+    // Skip tiny blobs (face noise)
+    if (w * h < minArea) continue;
+    // Skip person-labeled blobs that look face-sized (small + COCO said person)
+    if (b.label === 'person' && w * h < minArea * 5) continue;
     const a = Math.min(1, b.age / 5);
 
-    // Fill
-    ctx.fillStyle = glow + (0.04 * a) + ')';
+    ctx.fillStyle   = glow + (0.05 * a) + ')';
     ctx.fillRect(x, y, w, h);
-
-    // Outline
     ctx.strokeStyle = glow + (0.85 * a) + ')';
     ctx.lineWidth   = 1;
     ctx.shadowColor = col;
@@ -282,17 +253,16 @@ function drawBlobs(blobs, opacity) {
     const tk = 7;
     ctx.lineWidth = 2;
     ctx.strokeStyle = glow + a + ')';
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur  = 10;
     for (const [cx2,cy2,dx,dy] of [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]) {
       ctx.beginPath();
       ctx.moveTo(cx2+dx*tk, cy2); ctx.lineTo(cx2, cy2); ctx.lineTo(cx2, cy2+dy*tk);
       ctx.stroke();
     }
-
-    // Label
     ctx.shadowBlur = 0;
     ctx.fillStyle  = glow + (0.8 * a) + ')';
     ctx.fillText(`#${String(b.id).padStart(3,'0')}`, x+3, y-3);
+    // COCO label — text only, no emoji
     if (b.label) {
       ctx.font = '10px "Courier New"';
       ctx.fillText(b.label.toUpperCase(), x+4, y+12);
@@ -303,8 +273,8 @@ function drawBlobs(blobs, opacity) {
 }
 
 function drawActiveCells(grid, cw, ch, opacity) {
-  if (opacity <= 0) return;
-  const csx = canvas.width / cw, csy = canvas.height / ch;
+  if (opacity <= 0.01) return;
+  const csx = canvas.width/cw, csy = canvas.height/ch;
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.fillStyle   = C().glow + '0.06)';
@@ -314,38 +284,108 @@ function drawActiveCells(grid, cw, ch, opacity) {
   ctx.restore();
 }
 
+// ─── Truth Mode: big finger number ───────────────────────────────────────────
+function drawFingerNumber(n) {
+  const fontSize = Math.min(canvas.width * 0.52, canvas.height * 0.58);
+  const col  = C().main;
+  const glow = C().glow;
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font         = `900 ${fontSize}px "Courier New"`;
+  // Outer stroke glow
+  ctx.shadowColor  = col;
+  ctx.shadowBlur   = 90;
+  ctx.strokeStyle  = col;
+  ctx.lineWidth    = 1.5;
+  ctx.strokeText(String(n), canvas.width/2, canvas.height/2);
+  // Transparent fill so it looks outlined
+  ctx.shadowBlur   = 40;
+  ctx.fillStyle    = glow + '0.08)';
+  ctx.fillText(String(n), canvas.width/2, canvas.height/2);
+  ctx.restore();
+}
+
+// ─── Truth Mode: BTR strobe ───────────────────────────────────────────────────
+let strobeFrame = 0;
+
+function drawBTRStrobe() {
+  const f   = strobeFrame++;
+  const isOn = f % 5 < 3;                              // 3 frames color, 2 frames black
+  const ci   = Math.floor(f / 3) % STROBE.length;
+  const col  = STROBE[ci];
+  const textCol = STROBE[(ci + 4) % STROBE.length];
+
+  // BG flash
+  ctx.globalAlpha = isOn ? 0.88 : 0.92;
+  ctx.fillStyle   = isOn ? col : '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+
+  // BTR — chromatic aberration + glitch offset
+  const fontSize = Math.min(canvas.width * 0.63, canvas.height * 0.52);
+  const gx = isOn ? (Math.random()-0.5)*18 : 0;
+  const gy = isOn ? (Math.random()-0.5)*8  : 0;
+
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font         = `900 ${fontSize}px "Courier New"`;
+
+  // Chromatic split
+  if (isOn) {
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle   = '#ff0000';
+    ctx.fillText('BTR', canvas.width/2+gx+10, canvas.height/2+gy);
+    ctx.fillStyle   = '#00ffff';
+    ctx.fillText('BTR', canvas.width/2+gx-10, canvas.height/2+gy);
+    ctx.globalAlpha = 1;
+  }
+
+  // Main text
+  ctx.shadowColor  = textCol;
+  ctx.shadowBlur   = 60;
+  ctx.fillStyle    = isOn ? '#000000' : textCol;
+  ctx.fillText('BTR', canvas.width/2+gx, canvas.height/2+gy);
+
+  // Scan bars
+  ctx.globalAlpha = 0.04;
+  ctx.fillStyle   = '#ffffff';
+  const offset = (f * 10) % canvas.height;
+  for (let i = 0; i < 20; i++) {
+    ctx.fillRect(0, (offset + i*55) % canvas.height, canvas.width, 18);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ─── HUD ─────────────────────────────────────────────────────────────────────
 function drawHUD(blobCount, fps) {
   ctx.save();
-  ctx.font = '10px "Courier New"';
-  ctx.fillStyle = C().glow + '0.5)';
+  ctx.font      = '10px "Courier New"';
+  ctx.fillStyle = C().glow + '0.45)';
   ctx.shadowBlur = 0;
   const ts = new Date().toISOString().slice(11,19);
   ctx.fillText(`BLOBTRAK  //  ${ts}`, 12, canvas.height - 24);
-  ctx.fillText(`${fps} FPS  //  ${blobCount} BLOBS  //  ${cfg.colorMode.toUpperCase()}`, 12, canvas.height - 12);
+  ctx.fillText(`${fps} FPS  //  ${blobCount} BLOBS${cfg.truthMode ? '  //  TRUTH' : ''}`, 12, canvas.height - 12);
   ctx.restore();
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let cocoModel  = null;
+let cocoModel    = null;
 let handDetector = null;
 let blobTracker  = new BlobTracker();
-let lastGesture  = 'open';
-let blobOpacity  = 1;         // smoothly fades to 0 on fist
 let currentHands = [];
-let frameCount = 0, fps = 0, fpsTime = 0;
+let blobOpacity  = 1;
+let frameCount   = 0, fps = 0, fpsTime = 0;
 
 async function runModels() {
   if (video.readyState < 2) return;
-  // Hand detection every frame
-  try {
-    currentHands = await handDetector.estimateHands(video, { flipHorizontal: false });
-  } catch (_) {}
-  // COCO every 8 frames
+  try { currentHands = await handDetector.estimateHands(video, { flipHorizontal: false }); } catch (_) {}
   if (frameCount % 8 === 0 && cocoModel) {
     try {
       const dets = await cocoModel.detect(video, 10, cfg.confidence);
-      // stamp labels on blobs
-      const sx = PROC_W / video.videoWidth, sy = PROC_H / video.videoHeight;
+      const sx = PROC_W/video.videoWidth, sy = PROC_H/video.videoHeight;
       for (const det of dets) {
         const [dx,dy,dw,dh] = det.bbox;
         const cx=(dx+dw/2)*sx, cy=(dy+dh/2)*sy;
@@ -372,7 +412,7 @@ async function loop() {
     canvas.width=window.innerWidth; canvas.height=window.innerHeight;
   }
 
-  // Motion blob detection
+  // Motion blobs
   pctx.drawImage(video, 0, 0, PROC_W, PROC_H);
   const frame = pctx.getImageData(0, 0, PROC_W, PROC_H);
   updateBg(frame.data);
@@ -380,44 +420,62 @@ async function loop() {
   const { blobs: raw, grid, cw, ch } = findBlobs(mask);
   const blobs = blobTracker.update(raw);
 
-  // Run ML models async
-  runModels();
+  runModels(); // async, non-blocking
 
-  // Gesture → state
-  let gesture = 'open';
-  if (currentHands.length > 0) {
-    gesture = detectGesture(currentHands[0].keypoints);
-  }
+  // Analyze hand
+  let handState = { count: -1, isFist: false };
+  if (currentHands.length > 0) handState = analyzeHand(currentHands[0].keypoints);
 
-  if (gesture !== lastGesture) {
-    lastGesture = gesture;
-    gestureEl.textContent = gesture === 'fist' ? '✊ FIST — BLOBS CLEARED'
-                          : gesture === 'peace' ? '✌ PEACE'
-                          : '';
-    document.body.classList.toggle('fist-mode', gesture === 'fist');
-    setTimeout(() => { if (gestureEl.textContent !== '') gestureEl.textContent=''; }, 2000);
-  }
+  // Truth-mode gesture state machine
+  const inTruth     = cfg.truthMode;
+  const showStrobe  = inTruth && handState.isFist;
+  const fingerCount = inTruth && !handState.isFist && handState.count >= 1 && handState.count <= 3
+                      ? handState.count : 0;
 
-  // Smooth blob opacity: fist → 0, open → 1
-  const targetOpacity = gesture === 'fist' ? 0 : 1;
-  blobOpacity += (targetOpacity - blobOpacity) * 0.12;
+  // Blob opacity: hide blobs on fist (Truth), normal otherwise
+  const targetOpacity = (inTruth && handState.isFist) ? 0 : 1;
+  blobOpacity += (targetOpacity - blobOpacity) * 0.14;
+
+  // Body class for CSS
+  document.body.classList.toggle('strobe-mode', showStrobe);
+  document.body.classList.toggle('fist-mode',   inTruth && handState.isFist && !showStrobe);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  drawActiveCells(grid, cw, ch, blobOpacity);
-  drawBlobs(blobs, blobOpacity);
+  if (showStrobe) {
+    // BTR strobe completely takes over
+    drawBTRStrobe();
+    // Hand skeleton still visible on top
+    for (const hand of currentHands) drawHand(hand.keypoints, handState);
+  } else {
+    // Normal tracker render
+    ctx.fillStyle = 'rgba(0,0,0,0.48)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Draw all detected hands
-  for (const hand of currentHands) {
-    drawHand(hand.keypoints, gesture);
+    drawActiveCells(grid, cw, ch, blobOpacity);
+    drawBlobs(blobs, blobOpacity);
+
+    // Finger count number (Truth mode, 1–3 fingers)
+    if (fingerCount > 0) drawFingerNumber(fingerCount);
+
+    // Hand skeleton
+    for (const hand of currentHands) drawHand(hand.keypoints, handState);
   }
 
   drawHUD(blobs.size, fps);
   fpsCtr.textContent = `${fps} fps`;
   blobCtr.textContent = `${blobs.size} blobs`;
+
+  // Gesture HUD text — no emojis
+  if (inTruth) {
+    if (showStrobe)        gestureEl.textContent = 'BTR';
+    else if (fingerCount)  gestureEl.textContent = `${fingerCount}`;
+    else if (handState.count > 3) gestureEl.textContent = 'OPEN';
+    else                   gestureEl.textContent = '';
+  } else {
+    gestureEl.textContent = '';
+  }
 
   requestAnimationFrame(loop);
 }
@@ -456,14 +514,11 @@ document.getElementById('show-video').addEventListener('change', e => {
   cfg.showVideo = e.target.checked;
   video.classList.toggle('hidden', !cfg.showVideo);
 });
-
 document.getElementById('glow-slider').addEventListener('input', e =>
   cfg.motionThresh = +e.target.value);
-
 document.getElementById('trail-slider').addEventListener('input', e => {
   cfg.bgAlpha = +e.target.value / 1000; bgModel = null;
 });
-
 document.getElementById('confidence-slider').addEventListener('input', e =>
   cfg.confidence = +e.target.value / 100);
 
@@ -474,6 +529,16 @@ document.querySelectorAll('.theme-btn').forEach(btn => {
     cfg.colorMode = btn.dataset.theme;
     document.body.className = `theme-${cfg.colorMode}`;
   });
+});
+
+document.getElementById('truth-toggle').addEventListener('change', e => {
+  cfg.truthMode = e.target.checked;
+  if (!cfg.truthMode) {
+    strobeFrame = 0;
+    blobOpacity = 1;
+    gestureEl.textContent = '';
+    document.body.classList.remove('strobe-mode','fist-mode');
+  }
 });
 
 document.getElementById('fullscreen-btn').addEventListener('click', () =>
@@ -487,21 +552,15 @@ document.body.classList.add('theme-purple');
   try {
     await startCamera(null);
     await populateCameras();
-
     loaderTxt.textContent = 'Loading COCO model...';
     cocoModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-
     loaderTxt.textContent = 'Loading Hand model...';
     handDetector = await handPoseDetection.createDetector(
       handPoseDetection.SupportedModels.MediaPipeHands,
-      {
-        runtime: 'mediapipe',
+      { runtime: 'mediapipe',
         solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915',
-        modelType: 'full',
-        maxHands: 2,
-      }
+        modelType: 'full', maxHands: 2 }
     );
-
     loader.classList.add('hidden');
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     requestAnimationFrame(loop);
