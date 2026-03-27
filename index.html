@@ -12,7 +12,7 @@
       <div class="pulse-ring"></div>
       <div class="pulse-ring delay1"></div>
       <div class="pulse-ring delay2"></div>
-      <p id="loader-text">Loading ML Model...</p>
+      <p id="loader-text">Loading Models...</p>
     </div>
   </div>
 
@@ -22,6 +22,7 @@
   <div id="hud">
     <div id="fps-counter">-- fps</div>
     <div id="blob-count">0 blobs</div>
+    <div id="gesture-display"></div>
   </div>
 
   <div id="controls">
@@ -32,12 +33,12 @@
         <select id="camera-select"><option>Loading...</option></select>
       </div>
       <div class="control-group">
-        <label>Theme</label>
+        <label>Color</label>
         <div class="btn-row">
-          <button class="theme-btn active" data-theme="neon">Neon</button>
+          <button class="theme-btn active" data-theme="purple">Purple</button>
+          <button class="theme-btn" data-theme="white">White</button>
+          <button class="theme-btn" data-theme="green">Green</button>
           <button class="theme-btn" data-theme="fire">Fire</button>
-          <button class="theme-btn" data-theme="ice">Ice</button>
-          <button class="theme-btn" data-theme="void">Void</button>
         </div>
       </div>
       <div class="control-group">
@@ -48,16 +49,16 @@
         </label>
       </div>
       <div class="control-group">
-        <label>Blob Glow</label>
-        <input type="range" id="glow-slider" min="0" max="80" value="30" />
+        <label>Motion Sensitivity</label>
+        <input type="range" id="glow-slider" min="5" max="60" value="22" />
       </div>
       <div class="control-group">
-        <label>Trail Length</label>
-        <input type="range" id="trail-slider" min="0" max="40" value="20" />
+        <label>BG Learn Speed</label>
+        <input type="range" id="trail-slider" min="10" max="150" value="40" />
       </div>
       <div class="control-group">
-        <label>Confidence</label>
-        <input type="range" id="confidence-slider" min="10" max="90" value="40" />
+        <label>ML Confidence</label>
+        <input type="range" id="confidence-slider" min="10" max="90" value="35" />
       </div>
       <div class="control-group">
         <button id="fullscreen-btn">&#x26F6; Fullscreen</button>
@@ -65,8 +66,15 @@
     </div>
   </div>
 
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <!-- COCO-SSD -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <!-- Hand pose detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.1/dist/hand-pose-detection.min.js"></script>
+  <!-- MediaPipe Hands backend -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+
   <script src="app.js"></script>
 </body>
 </html>
