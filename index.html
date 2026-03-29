@@ -19,6 +19,9 @@
   <video id="webcam" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
 
+  <!-- Floating mode pill top-right -->
+  <div id="mode-pill"></div>
+
   <div id="hud">
     <div id="fps-counter">-- fps</div>
     <div id="blob-count">0 blobs</div>
@@ -26,12 +29,14 @@
   </div>
 
   <div id="controls">
-    <button id="toggle-controls" title="Toggle controls">&#9881;</button>
+    <button id="toggle-controls" title="Toggle controls [H]">&#9881;</button>
     <div id="controls-panel">
+
       <div class="control-group">
         <label>Camera</label>
         <select id="camera-select"><option>Loading...</option></select>
       </div>
+
       <div class="control-group">
         <label>Color</label>
         <div class="btn-row">
@@ -41,6 +46,17 @@
           <button class="theme-btn" data-theme="fire">Fire</button>
         </div>
       </div>
+
+      <div class="control-group">
+        <label>FX</label>
+        <div class="btn-row">
+          <button class="fx-btn active" data-fx="particles" title="Fingertip particles">PTCL</button>
+          <button class="fx-btn active" data-fx="spirit"    title="Spirit ghost map">SPRT</button>
+          <button class="fx-btn active" data-fx="crt"       title="CRT scanlines">CRT</button>
+          <button class="fx-btn active" data-fx="wave"      title="Edge waveform">WAVE</button>
+        </div>
+      </div>
+
       <div class="control-group">
         <label>Show Camera Feed</label>
         <label class="toggle">
@@ -48,41 +64,46 @@
           <span class="slider"></span>
         </label>
       </div>
+
       <div class="control-group">
         <label>Motion Sensitivity</label>
         <input type="range" id="glow-slider" min="5" max="60" value="22" />
       </div>
+
       <div class="control-group">
         <label>BG Learn Speed</label>
         <input type="range" id="trail-slider" min="10" max="150" value="40" />
       </div>
+
       <div class="control-group">
         <label>ML Confidence</label>
         <input type="range" id="confidence-slider" min="10" max="90" value="35" />
       </div>
+
       <div class="control-group truth-row">
         <label class="truth-label">TRUTH MODE</label>
         <label class="toggle">
           <input type="checkbox" id="truth-toggle" />
           <span class="slider truth-slider"></span>
         </label>
-        <span class="truth-hint">1 · 2 · 3 · BTR</span>
+        <span class="truth-hint">1·2·3·4·FIST=BTR</span>
       </div>
+
       <div class="control-group">
-        <button id="fullscreen-btn">&#x26F6; Fullscreen</button>
+        <span class="keys-label">T  F  V  H  R</span>
       </div>
+
+      <div class="control-group">
+        <button id="fullscreen-btn">&#x26F6; Fullscreen [F]</button>
+      </div>
+
     </div>
   </div>
 
-  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
-  <!-- COCO-SSD -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-  <!-- Hand pose detection -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.1/dist/hand-pose-detection.min.js"></script>
-  <!-- MediaPipe Hands backend -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
-
   <script src="app.js"></script>
 </body>
 </html>
